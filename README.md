@@ -23,18 +23,12 @@ A small, dependency-free Java project that implements and tests a boundary-aware
 | `OptimizedBinarySearch.java` | Boundary-aware binary search implementation |
 | `BinarySearchTest.java` | Dependency-free correctness tests |
 | `BinarySearchExistingBenchmark.java` | Comparison harness for standard and optimized search |
+| `test.java` | Small usage example |
 
-## Compile and run
-
-Compile the implementation and tests:
+## Compile and run tests
 
 ```bash
 javac OptimizedBinarySearch.java BinarySearchTest.java
-```
-
-Run the tests:
-
-```bash
 java BinarySearchTest
 ```
 
@@ -44,7 +38,7 @@ Expected output:
 All tests passed (... assertions).
 ```
 
-## Use it in your code
+## Example usage
 
 ```java
 int[] numbers = { 2, 4, 6, 8, 10, 12 };
@@ -59,6 +53,13 @@ if (index >= 0) {
 ```
 
 **Important:** The input array must already be sorted in ascending order. The method does not sort the array.
+
+Run the included example:
+
+```bash
+javac OptimizedBinarySearch.java test.java
+java test
+```
 
 ## Run the benchmark
 
@@ -77,7 +78,7 @@ java BinarySearchExistingBenchmark
 You can change the measured rounds and searches per round:
 
 ```bash
-java BinarySearchBenchmark 9 200000
+java BinarySearchExistingBenchmark 9 200000
 ```
 
 The harness:
