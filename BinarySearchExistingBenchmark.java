@@ -1,153 +1,165 @@
-
+import java.util.Arrays;
 import java.util.Random;
 
-public class BinarySearchExistingBenchmark {
+/**
+ * A lightweight comparison harness, not a replacement for JMH.
+ *
+ * Run: javac OptimizedBinarySearch.java BinarySearchBenchmark.java
+ *      java BinarySearchBenchmark
+ *
+ * Optional arguments: number of measured rounds, number of searches per round.
+ */
+public class BinarySearchBenchmark {
 
-    // ---------- VALUE INITIALIZATION ----------
+    private static volatile long blackhole;
 
-    static int[] initializeArray(int size) {
+    private static int[] createArray(int size) {
         int[] arr = new int[size];
-
         for (int i = 0; i < size; i++) {
             arr[i] = i * 2;
         }
-
         return arr;
     }
 
-    static int[] initializeTargets(int[] arr, int tests) {
-        int[] targets = new int[tests];
+    private static int[] createTargets(int[] arr, int count) {
+        int[] targets = new int[count];
         Random random = new Random(42);
 
-        for (int i = 0; i < tests; i++) {
-            int randomIndex = random.nextInt(arr.length);
-            targets[i] = arr[randomIndex];
+        for (int i = 0; i < count; i++) {
+            int index = random.nextInt(arr.length);
+            // Half successful searches, half unsuccessful searches.
+            targets[i] = (i & 1) == 0 ? arr[index] : arr[index] + 1;
         }
-
         return targets;
     }
 
-    // ---------- STANDARD BINARY SEARCH ----------
-
-    static int standardSearch(int[] arr, int target) {
+    private static int standardSearch(int[] arr, int target) {
         int low = 0;
         int high = arr.length - 1;
 
         while (low <= high) {
             int mid = low + (high - low) / 2;
+            int value = arr[mid];
 
-            if (arr[mid] == target)
+            if (value == target) {
                 return mid;
-
-            if (arr[mid] < target)
+            }
+            if (value < target) {
                 low = mid + 1;
-            else
+            } else {
                 high = mid - 1;
+            }
         }
-
         return -1;
     }
 
-    // ---------- OPTIMIZED BINARY SEARCH ----------
-
-    static int optimizedSearch(int[] arr, int target) {
-        int low = 0;
-        int high = arr.length - 1;
-
-        if (high < 0 || arr[low] > target || arr[high] < target)
-            return -1;
-
-        while (low <= high) {
-            if (arr[low] == target)
-                return low;
-
-            if (arr[high] == target)
-                return high;
-
-            int mid = low + (high - low) / 2;
-
-            if (arr[mid] == target)
-                return mid;
-
-            if (arr[mid] < target)
-                low = mid + 1;
-            else
-                high = mid - 1;
+    private static long runStandard(int[] arr, int[] targets) {
+        long checksum = 0;
+        for (int target : targets) {
+            checksum += standardSearch(arr, target);
         }
-
-        return -1;
+        return checksum;
     }
 
-    // ---------- BENCHMARK ----------
+    private static long runOptimized(int[] arr, int[] targets) {
+        long checksum = 0;
+        for (int target : targets) {
+            checksum += OptimizedBinarySearch.search(arr, target);
+        }
+        return checksum;
+    }
 
-    static void runBenchmark(int[] arr, int[] targets) {
+    private static long timeStandard(int[] arr, int[] targets) {
+        long start = System.nanoTime();
+        blackhole ^= runStandard(arr, targets);
+        return System.nanoTime() - start;
+    }
 
-        long standardTime = 0;
-        long optimizedTime = 0;
+    private static long timeOptimized(int[] arr, int[] targets) {
+        long start = System.nanoTime();
+        blackhole ^= runOptimized(arr, targets);
+        return System.nanoTime() - start;
+    }
 
-        int tests = targets.length;
+    private static long median(long[] values) {
+        long[] copy = values.clone();
+        Arrays.sort(copy);
+        return copy[copy.length / 2];
+    }
 
-        // Warm-up
-        for (int i = 0; i < 20_000; i++) {
-            int target = targets[i % tests];
-            optimizedSearch(arr, target);
-            standardSearch(arr, target);
+    private static void verifyResults(int[] arr, int[] targets) {
+        for (int target : targets) {
+            int standard = standardSearch(arr, target);
+            int optimized = OptimizedBinarySearch.search(arr, target);
+
+            if (standard != -1 && arr[standard] != target) {
+                throw new AssertionError("Standard search returned a bad index");
+            }
+            if (optimized != -1 && arr[optimized] != target) {
+                throw new AssertionError("Optimized search returned a bad index");
+            }
+            if ((standard == -1) != (optimized == -1)) {
+                throw new AssertionError("Search methods disagree for " + target);
+            }
+        }
+    }
+
+    private static void benchmark(int size, int rounds, int testsPerRound) {
+        int[] arr = createArray(size);
+        int[] targets = createTargets(arr, testsPerRound);
+        verifyResults(arr, targets);
+
+        // Warm both methods before collecting measurements.
+        for (int i = 0; i < 4; i++) {
+            runStandard(arr, targets);
+            runOptimized(arr, targets);
         }
 
-        // Actual test
-        for (int i = 0; i < tests; i++) {
+        long[] standardTimes = new long[rounds];
+        long[] optimizedTimes = new long[rounds];
 
-            int target = targets[i];
-
-            long start = System.nanoTime();
-            int a = standardSearch(arr, target);
-            standardTime += System.nanoTime() - start;
-
-            start = System.nanoTime();
-            int b = optimizedSearch(arr, target);
-            optimizedTime += System.nanoTime() - start;
-
-            if (a != b || a == -1) {
-                throw new AssertionError(
-                        "Incorrect result for target: " + target);
+        // Reverse the execution order each round to reduce systematic order bias.
+        for (int round = 0; round < rounds; round++) {
+            if ((round & 1) == 0) {
+                standardTimes[round] = timeStandard(arr, targets);
+                optimizedTimes[round] = timeOptimized(arr, targets);
+            } else {
+                optimizedTimes[round] = timeOptimized(arr, targets);
+                standardTimes[round] = timeStandard(arr, targets);
             }
         }
 
-        System.out.println("Array size: " + arr.length);
-        System.out.println("Tests: " + tests);
+        long standardMedian = median(standardTimes);
+        long optimizedMedian = median(optimizedTimes);
+        double standardNsPerSearch = (double) standardMedian / testsPerRound;
+        double optimizedNsPerSearch = (double) optimizedMedian / testsPerRound;
+        double speedup = (double) standardMedian / optimizedMedian;
 
-        System.out.println(
-                "Standard: " + standardTime / 1_000_000.0 + " ms");
-
-        System.out.println(
-                "Optimized: " + optimizedTime / 1_000_000.0 + " ms");
-
-        System.out.println();
+        System.out.printf("Array size: %,d | Searches per round: %,d%n",
+                size, testsPerRound);
+        System.out.printf("Standard median:  %.3f ms (%.2f ns/search)%n",
+                standardMedian / 1_000_000.0, standardNsPerSearch);
+        System.out.printf("Optimized median: %.3f ms (%.2f ns/search)%n",
+                optimizedMedian / 1_000_000.0, optimizedNsPerSearch);
+        System.out.printf("Speedup: %.2fx%n%n", speedup);
     }
 
-    // ---------- MAIN ----------
-
     public static void main(String[] args) {
+        int rounds = args.length > 0 ? Integer.parseInt(args[0]) : 7;
+        int testsPerRound = args.length > 1
+                ? Integer.parseInt(args[1]) : 100_000;
 
-        int[] sizes = {
-                1,
-                10,
-                100,
-                10_000,
-                100_000,
-                1_000_000,
-                10_000_000,
-                100_000_000
-        };
-
-        int tests = 1_000_000;
-
-        for (int size : sizes) {
-
-            int[] arr = initializeArray(size);
-            int[] targets = initializeTargets(arr, tests);
-
-            runBenchmark(arr, targets);
+        if (rounds < 3 || testsPerRound < 1) {
+            throw new IllegalArgumentException(
+                    "Use at least 3 rounds and at least 1 search per round.");
         }
+
+        int[] sizes = { 1, 10, 100, 10_000, 100_000, 1_000_000, 10_000_000 };
+        for (int size : sizes) {
+            benchmark(size, rounds, testsPerRound);
+        }
+
+        System.out.println("Checksum: " + blackhole);
+        System.out.println("Note: use JMH for publishable JVM benchmark results.");
     }
 }
